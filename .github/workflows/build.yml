@@ -1,1 +1,43 @@
+name: Build macOS
 
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -G Xcode
+
+      - name: Build (Release, universal arm64 + x86_64)
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Sign (ad-hoc) and package
+        run: |
+          mkdir -p dist
+          find build -type d \( -name 'Backswell.vst3' -o -name 'Backswell.component' -o -name 'Backswell.app' \) -prune -print | while read -r bundle; do
+            echo "Packaging $bundle"
+            codesign --force --deep --sign - "$bundle"
+            cp -R "$bundle" dist/
+          done
+          cd dist
+          for b in Backswell.vst3 Backswell.component Backswell.app; do
+            if [ -d "$b" ]; then
+              ditto -c -k --keepParent "$b" "$b.zip"
+            fi
+          done
+          ls -la
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Backswell-macOS
+          path: dist/*.zip
+          if-no-files-found: error
